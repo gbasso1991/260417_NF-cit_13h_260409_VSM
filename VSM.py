@@ -41,30 +41,30 @@ def coercive_field(H, M):
 #%% NF@cit-260409
 data_NF = np.loadtxt('NF@cit_13h_260409.txt', skiprows=12)
 H_NF = data_NF[:, 0]  # Gauss
-m_NF = data_NF[:, 1]*1.00435414  #con correccion de Flavio
+m_NF = data_NF[:, 1]  # emu
 
 conc_NF = 32.8 #mg/mL Magnetita
 
 conc_NF_mm = conc_NF/1000 #mg np/mg de solvente
-masa_NF = 1#(0.1172-0.0666)*conc_NF_mm
+masa_NF = (0.1117-0.0601)*conc_NF_mm
 m_NF_norm = m_NF/masa_NF #emu/g
+name_NF='NF@cit 13h'
 
 fig, a = plt.subplots( figsize=(8, 6), constrained_layout=True)
-a.plot(H_NF, m_NF, '.-', label='NF@cit_13h')
+a.plot(H_NF, m_NF, '.-', label=name_NF)
 a.set_ylabel('m (emu)')
 a.legend()
 a.grid()
-a.set_title('NF@cit_13h')
+a.set_title(name_NF)
 a.set_xlabel('H (G)')
 a.set_ylabel('m (emu)')
 plt.show()
-#%% NF Normalizada por masa
+#%% NF@cit-260409 Normalizado por masa
+
 fig2, b = plt.subplots( figsize=(8, 6), constrained_layout=True)
 
-b.plot(H_NF, m_NF_norm,'.-', label=f'NE core (norm con m = {masa_NF:.1e} g)')
-
+b.plot(H_NF, m_NF_norm,'.-', label=f'Normalizada\nC = {conc_NF} mg/mL\nm = {masa_NF*1000:.3f} mg')
 b.set_ylabel('m (emu/g)')
-b.legend()
 b.grid()
 b.set_title('NF@cit_13h - Normalizada por masa')
 b.set_xlabel('H (G)')
@@ -79,6 +79,8 @@ axins = inset_axes(b,
     borderpad=0) 
 
 
+b.legend(title=name_NF,ncol=1,frameon=True,shadow=True,labelspacing=1.2)
+
 # Volver a graficar las curvas en el inset
 axins.plot(H_NF, m_NF_norm,'.-')
 
@@ -90,3 +92,75 @@ axins.grid()
 
 plt.savefig('NF@cit_13h.png',dpi=300)
 plt.show()
+#%%
+resultados_fit = {}
+H_fit_arrays = {}
+m_fit_arrays = {}
+for nombre, H, m ,mass in [('NF', H_NF, m_NF, masa_NF)]:
+    H_anhist, m_anhist = mt.anhysteretic(H, m)
+    fit = fit3.session(H_anhist, m_anhist, fname=nombre, divbymass=True,mass=mass)
+    fit.fix('sig0')
+    fit.fix('mu0')
+    fit.free('dc')
+    fit.fit()
+    fit.update()
+    fit.free('sig0')
+    fit.free('mu0')
+    fit.set_yE_as('sep')
+    fit.fit()
+    fit.update()
+    fit.save()
+    fit.print_pars()
+    # Obtengo la contribución lineal usando los parámetros del fit
+    C = fit.params['C'].value
+    dc = fit.params['dc'].value
+    linear_contrib = lineal(fit.X, C, dc)
+    m_fit_sin_lineal = fit.Y - linear_contrib
+    resultados_fit[nombre]={'H_anhist': H_anhist,
+                            'm_anhist': m_anhist,
+                            'H_fit': fit.X,
+                            'm_fit': fit.Y,
+                            'm_fit_sin_lineal': m_fit_sin_lineal,
+                            'linear_contrib': linear_contrib,
+                            'Ms':fit.derived_parameters()['m_s'],
+                            'fit': fit}
+    H_fit_arrays[nombre] = fit.X
+    m_fit_arrays[nombre] = fit.Y
+
+
+#%% Ploteo los fits
+
+fig, ax = plt.subplots( figsize=(8, 6), constrained_layout=True)
+
+ax.plot(H_NF, m_NF_norm,'o-', c='C0',alpha=0.4,label=f'Datos originales\nC = {conc_NF} mg/mL\nm = {masa_NF*1000:.3f} mg')
+
+ax.plot(resultados_fit['NF']['H_fit'], resultados_fit['NF']['m_fit'],
+        '.-', c='C1',label=f'Ajuste\nm$_s$ = {resultados_fit["NF"]["Ms"]:.2uS} emu/g\n$<\mu_\mu$>= {resultados_fit["NF"]["fit"].derived_parameters()["<mu>_mu"]:.1uS} $\mu_B$')
+
+
+ax.set_ylabel('m (emu/g)')
+ax.set_xlabel('H (G)')
+ax.legend(title=name_NF,ncol=1,frameon=True,shadow=True,labelspacing=1.2)
+ax.grid()
+ax.set_title(name_NF)
+
+axins = inset_axes(    ax,
+    width="40%",
+    height="40%",
+    loc='lower right',
+    bbox_to_anchor=(-0.01, 0.08, 0.98, 1), 
+    bbox_transform=ax.transAxes,
+    borderpad=0) 
+
+# Volver a graficar las curvas en el inset
+axins.plot(H_NF, m_NF_norm,'o-', c='C0',alpha=0.4)
+axins.plot(resultados_fit['NF']['H_fit'], resultados_fit['NF']['m_fit'],'.-',c='C1')
+
+# Definir región de zoom (AJUSTAR ESTOS VALORES)
+axins.set_xlim(-20, 20)   # rango eje X
+axins.set_ylim(-8, 8)   # rango eje Y
+axins.grid()
+
+plt.savefig(name_NF+'_fit.png',dpi=300)
+plt.show()
+#%%
